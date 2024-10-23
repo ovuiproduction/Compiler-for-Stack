@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <limits.h>
 
 int yylex(void);
 int yyerror(const char *s);
@@ -11,7 +12,8 @@ void print_tokens();
 
 char* current_function_name;
 
-typedef enum { INT_TYPE, VOID_TYPE, CHAR_TYPE, STRING_TYPE, STACK_TYPE } VarType;
+typedef enum { INT_TYPE, VOID_TYPE, CHAR_TYPE, STRING_TYPE, STACK_INT_TYPE,NONE_TYPE } VarType;
+typedef enum { NONE,STATIC,STACK_SIZE,STACK_TOP } valueType;
 
 typedef struct {
     char* variable;
@@ -19,28 +21,30 @@ typedef struct {
     char* scope;
     bool isFunction;
     int param_count;
+    VarType argument_type;
+    valueType val_type;
 } Symbol;
+
+VarType argument_type;
 
 Symbol symbol_table[100];
 int symbol_count = 0;
 
-bool isDeclared(const char* var, const char* scope) {
+int stack_size_count = 0;
+
+int isDeclared(const char* var, const char* scope) {
     for (int i = 0; i < symbol_count; i++) {
         if (strcmp(symbol_table[i].variable, var) == 0 && strcmp(symbol_table[i].scope, scope) == 0) {
-            return true;
+            return i;
         }
     }
-    return false;
+    return -1;
 }
 
-int isFunctionDeclared(const char* var,int argument) {
+int isFunctionDeclared(const char* var) {
     for (int i = 0; i < symbol_count; i++) {
         if (strcmp(symbol_table[i].variable, var) == 0 ) {
-            if(argument == symbol_table[i].param_count){
-                return 0;
-            }else{
-                return 1;
-            }
+            return i;
         }
     }
     return -1;
@@ -61,9 +65,9 @@ void add_symbol(const char* var, VarType type, const char* scope, bool isFunctio
 }
 
 void show_symbol_table() {
-    printf("---------------------------------------------------------------\n");
-    printf("| %-15s | %-10s | %-15s | %-10s |\n", "Variable", "Type", "Scope", "Is Func");
-    printf("---------------------------------------------------------------\n");
+    printf("-------------------------------------------------------------------------------------------------------------\n");
+    printf("| %-15s | %-10s | %-15s | %-10s | %-15s  | %-10s | %-10s  |\n", "Variable", "Type", "Scope", "Is Func","Total Argument","Value Type","Argu Type");
+    printf("-------------------------------------------------------------------------------------------------------------\n");
     for (int i = 0; i < symbol_count; i++) {
         printf("| %-15s | ", symbol_table[i].variable);
         if (symbol_table[i].type == INT_TYPE) {
@@ -74,14 +78,45 @@ void show_symbol_table() {
             printf("%-10s | ", "String");
         } else if (symbol_table[i].type == VOID_TYPE) {
             printf("%-10s | ", "Void");
-        } else if (symbol_table[i].type == STACK_TYPE) {
+        } else if (symbol_table[i].type == STACK_INT_TYPE) {
             printf("%-10s | ", "Stack");
         }
-        printf("%-15s | %-10s | %-10d\n", symbol_table[i].scope, symbol_table[i].isFunction ? "Yes" : "No",symbol_table[i].param_count);
+        printf("%-15s | %-10s | ", symbol_table[i].scope, symbol_table[i].isFunction ? "Yes" : "No");
+        if(symbol_table[i].isFunction){
+            printf(" %-15d | ",symbol_table[i].param_count);
+        }else{
+            printf(" %-15s | ","-");
+        }
+        if (symbol_table[i].val_type == STATIC) {
+            printf("%-10s | ", "Static");
+        } else if (symbol_table[i].val_type == NONE) {
+            printf("%-10s | ", "None");
+        } else if (symbol_table[i].val_type == STACK_SIZE) {
+            printf("%-10s | ", "Stack Size");
+        }
+        if(symbol_table[i].isFunction){
+              if (symbol_table[i].argument_type == INT_TYPE) {
+            printf("%-10s | ", "Integer");
+        } else if (symbol_table[i].argument_type == CHAR_TYPE) {
+            printf("%-10s | ", "Character");
+        } else if (symbol_table[i].argument_type == STRING_TYPE) {
+            printf("%-10s | ", "String");
+        } else if (symbol_table[i].argument_type == VOID_TYPE) {
+            printf("%-10s | ", "Void");
+        } else if (symbol_table[i].argument_type == STACK_INT_TYPE) {
+            printf("%-10s  | ", "Stack");
+        }else if (symbol_table[i].argument_type == NONE_TYPE) {
+            printf("%-10s  | ", "none");
+        }
+        }else{
+            printf(" %-10s | ","-");
+        }
+        
+        printf("\n");
     }
-    printf("---------------------------------------------------------------\n\n");
+    printf("-------------------------------------------------------------------------------------------------------------\n\n");
 }
-
+int curr_function_call_index;
 %}
 
 %union {
@@ -100,10 +135,11 @@ void show_symbol_table() {
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
 %token TERMINATOR_SYMBOL COMMA
 %token <id> IDENTIFIER
-%token <str> STRING_LITERAL
-%token <num> NUMBER
+%token <str> STRING_LITERAL NUMBER
 
-%type <num> function_parameter_list argument_list
+%type <num> function_parameter_list argument_list  stack_size
+%type <str> variable_declaration_name function_name
+
 %%
 
 program:
@@ -152,7 +188,6 @@ function_signature:
     }
     | function_declaration_name LPAREN function_parameter_list RPAREN
     {
-        printf("Parameter : %d",$3);
         symbol_table[symbol_count - ($3+1)].param_count = $3;
     }
 
@@ -161,11 +196,13 @@ function_declaration_name:
     {
         current_function_name = strdup($2);
         add_symbol($2, VOID_TYPE, current_function_name, true); 
+        symbol_table[symbol_count - 1].val_type = NONE;
     }
     | INT IDENTIFIER
     {
        current_function_name = strdup($2);
         add_symbol($2, VOID_TYPE, current_function_name, true); 
+        symbol_table[symbol_count - 1].val_type = NONE;
     };
 
 variable_declaration_name:
@@ -176,8 +213,8 @@ variable_declaration_name:
     }
     | INT IDENTIFIER
     {
-         add_symbol($2, INT_TYPE, current_function_name, false); 
-         symbol_table[symbol_count - 1].param_count = 1;
+        add_symbol($2, INT_TYPE, current_function_name, false); 
+        symbol_table[symbol_count - 1].param_count = 1;
     };
 
 function_parameter_list:
@@ -188,20 +225,23 @@ function_parameter_list:
     | function_parameter_list COMMA function_parameter
     {
         $$ = $1 + 1;
-        printf("function parameter processed.\n");
     };
 
 function_parameter:
     STACK SPECIAL_SYMBOL INT SPECIAL_SYMBOL IDENTIFIER 
     {
         printf("function parameter\n");
-        add_symbol($5, STACK_TYPE, current_function_name, false);
+        add_symbol($5, STACK_INT_TYPE, current_function_name, false);
         symbol_table[symbol_count - 1].param_count = 1;
+        symbol_table[symbol_count - 1].val_type = STATIC;
+        symbol_table[symbol_count - 2].argument_type = STACK_INT_TYPE;
     }
     | INT IDENTIFIER
     {
         add_symbol($2, INT_TYPE, current_function_name, false);
         symbol_table[symbol_count - 1].param_count = 1;
+        symbol_table[symbol_count - 1].val_type = STATIC;
+        symbol_table[symbol_count - 2].argument_type = INT_TYPE;
     }
     | ''
     ;
@@ -213,28 +253,42 @@ function_definition:
     };
 
 function_call:
-    IDENTIFIER LPAREN argument_list RPAREN TERMINATOR_SYMBOL
+    function_name LPAREN argument_list RPAREN TERMINATOR_SYMBOL
     {
-        if (isFunctionDeclared($1,$3) == -1) {
+        int index = isFunctionDeclared($1);
+        if (index == -1) {
             printf("\nFunction %s is not declared!!!!\n", strdup($1));
             exit(0);
-        }else if(isFunctionDeclared($1,$3) == 1){
-            printf("\nFunction %s Argument Mismatch error!!!!\n\n", strdup($1));
+        }
+        if(symbol_table[index].param_count != $3){
+            printf("\nFunction %s Argument Mismatch error!!!! Expected %d arguments, got %d.\n\n", 
+                   strdup($1), symbol_table[index].param_count, $3);
+            exit(0);
+        }
+      
+        if(symbol_table[index].argument_type != argument_type){
+            printf("\nFunction Argument Type Mismatch error!!!!");
             exit(0);
         }
     }
-    | IDENTIFIER LPAREN RPAREN TERMINATOR_SYMBOL
+    | function_name LPAREN RPAREN TERMINATOR_SYMBOL
     {
-        if (isFunctionDeclared($1,0) == -1) {
+        int index = isFunctionDeclared($1);
+        if (index == -1) {
             printf("\nFunction %s is not declared!!!!\n", strdup($1));
             exit(0);
-        }else if(isFunctionDeclared($1,0) == 1){
-            printf("\nFunction %s Argument Mismatch error!!!!\n\n", strdup($1));
+        }else if(symbol_table[index].param_count != 0){
+             printf("\nFunction %s Argument Mismatch error!!!! Expected %d arguments, got 0.\n\n", 
+                   strdup($1), symbol_table[index].param_count);
             exit(0);
         }
     }
     ;
-
+function_name:
+    IDENTIFIER
+    {
+        $$ = $1;
+    }
 argument_list:
     argument 
     {
@@ -248,10 +302,12 @@ argument_list:
 argument:
     IDENTIFIER
     {
-        if (!isDeclared($1, current_function_name)) {
+        int argumentIndex = isDeclared($1, current_function_name);
+        if (argumentIndex==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
+        argument_type = symbol_table[argumentIndex].type;
     }
 
 statement_list:
@@ -272,11 +328,29 @@ statement:
 
 variable_declaration:
     variable_declaration_name TERMINATOR_SYMBOL
+    {
+        symbol_table[symbol_count - 1].param_count = 1;
+    }
     | variable_declaration_name ASSIGNMENT_OPERATOR variable_value TERMINATOR_SYMBOL
+    {
+        symbol_table[symbol_count - 1].param_count = 1;
+    }
 
 variable_value:
     NUMBER
+    {
+        if((int)$1>INT_MAX || (int)$1<INT_MIN){
+            printf("\nInteger Range Exceeded!!!!!\n\n");
+        }
+        symbol_table[symbol_count - 1].val_type = STATIC;
+    }
     | stack_size
+    {
+        if((int)$1>INT_MAX || (int)$1<INT_MIN){
+            printf("\nInteger Range Exceeded!!!!!\n\n");
+        }
+        symbol_table[symbol_count - 1].val_type = STACK_SIZE;
+    }
 
 for_loop_signature:
     FOR LPAREN initialization_block TERMINATOR_SYMBOL condition_block TERMINATOR_SYMBOL action_block RPAREN
@@ -287,12 +361,12 @@ initialization_block:
     {
         add_symbol($2, INT_TYPE, current_function_name, false);
         symbol_table[symbol_count - 1].param_count = 1;
+        symbol_table[symbol_count - 1].val_type = STATIC;
     }
     | IDENTIFIER ASSIGNMENT_OPERATOR NUMBER
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
-            symbol_table[symbol_count - 1].param_count = 1;
             exit(0);
         }
     }
@@ -301,22 +375,22 @@ initialization_block:
 condition_block:
     IDENTIFIER SPECIAL_SYMBOL IDENTIFIER
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
-        if (!isDeclared($3, current_function_name)) {
+        if (isDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($3));
             exit(0);
         }
     }
     | IDENTIFIER ASSIGNMENT_OPERATOR IDENTIFIER
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
-         if (!isDeclared($3, current_function_name)) {
+         if (isDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($3));
             exit(0);
         }
@@ -326,7 +400,7 @@ condition_block:
 action_block:
     IDENTIFIER INCREMENT_OPERATOR INCREMENT_OPERATOR
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
@@ -340,44 +414,52 @@ for_loop:
 stack_declaration:
     STACK SPECIAL_SYMBOL INT SPECIAL_SYMBOL IDENTIFIER TERMINATOR_SYMBOL
     {
-        add_symbol($5, STACK_TYPE, current_function_name, false);
+        add_symbol($5, STACK_INT_TYPE, current_function_name, false);
         symbol_table[symbol_count - 1].param_count = 1;
+        symbol_table[symbol_count - 1].val_type = STATIC;
     };
 
 stack_push:
-    IDENTIFIER DOT PUSH LPAREN NUMBER RPAREN TERMINATOR_SYMBOL
+    IDENTIFIER DOT PUSH LPAREN variable_value RPAREN TERMINATOR_SYMBOL
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
+        stack_size_count++;
         printf("Processed stack push statement.\n");
     };
     
 stack_size:
     IDENTIFIER DOT SIZE LPAREN RPAREN
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
+        $$ = stack_size_count;
         printf("Processed stack size statement.\n");
     };
     
 stack_pop:
     IDENTIFIER DOT POP LPAREN RPAREN TERMINATOR_SYMBOL
     {
-        if (!isDeclared($1, current_function_name)) {
+        if (isDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
+        if(stack_size_count<0){
+            printf("\nStack %s - Stack Underflow Error!!!!\n\n", strdup($1));
+            exit(0);
+        }
+        stack_size_count--;
         printf("Processed stack pop statement.\n");
     };
 
 stack_top:
     COUT OPERATOR IDENTIFIER DOT TOP LPAREN RPAREN OPERATOR ENDL TERMINATOR_SYMBOL
     {
-        if (!isDeclared($3, current_function_name)) {
+        if (isDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($3));
             exit(0);
         }
@@ -396,6 +478,8 @@ main_function_signature:
         current_function_name = strdup("main");
         add_symbol("main", INT_TYPE, "main", true); 
         symbol_table[symbol_count - 1].param_count = 0;
+        symbol_table[symbol_count - 1].val_type = NONE;
+        symbol_table[symbol_count - 1].argument_type = NONE_TYPE;
     };
 
 main_function_definition:
