@@ -30,7 +30,7 @@ void add_symbol(const char* var, VarType type, const char* scope) {
             exit(0);
         }
     }
-    symbol_table[symbol_count].variable = strdup(var);  
+    symbol_table[symbol_count].variable = strdup(var);
     symbol_table[symbol_count].type = type;
     symbol_table[symbol_count].scope = strdup(scope);
     symbol_count++;

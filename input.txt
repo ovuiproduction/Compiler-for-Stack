@@ -19,7 +19,6 @@ void displayStack(stack<int> s)
 int main()
 {
   stack<int> s;
- 
   s.push(1);
 
   displayStack(s);
