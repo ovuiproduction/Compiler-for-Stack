@@ -40,6 +40,7 @@ void store_token(const char *type, const char *text) {
 "iostream"            {store_token("Identifiers", yytext); return HEADER_FILE; }
 "stack"               {store_token("Identifiers", yytext); return STACK; }
 "int"                 {store_token("DataTypes", yytext); return INT; }
+"char*"                 {store_token("DataTypes", yytext); return CHARSTAR; }
 "void"                {store_token("Keyword", yytext); return VOID; }
 "main"                {store_token("Identifiers", yytext); return MAIN;}
 "using"               {store_token("Keyword", yytext); return USING; }

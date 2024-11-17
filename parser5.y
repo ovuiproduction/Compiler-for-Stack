@@ -25,14 +25,110 @@ typedef struct {
     valueType val_type;
 } Symbol;
 
+
 VarType argument_type;
 
 Symbol symbol_table[100];
+
 int symbol_count = 0;
 
-int stack_size_count = 0;
+typedef struct{
+    char* variable;
+    char* data_type;
+    char* scope;
+    bool isActual;
+    int size;
+}stackInfo;
 
-int isDeclared(const char* var, const char* scope) {
+stackInfo stackData[100];
+int stack_count=0;
+
+void stack_push_ele(const char* variable,const char* data_type, const char* scope){
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].variable, variable) == 0 && strcmp(stackData[i].scope, scope) == 0) {
+           stackData[i].size++;
+        }
+    }
+}
+
+void stack_top_ele(const char* variable,const char* scope){
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].variable, variable) == 0 && strcmp(stackData[i].scope, scope) == 0) {
+            if(stackData[i].size == 0){
+                printf("\n!!!!!Stack Underflow Error");
+                exit(0);
+            }
+        }
+    }
+}
+void stack_typemismatch1(const char* function ,const char* scope, const char* variable){
+    char* data_type_actual = " ";
+    char* data_type_virtual = " ";
+    bool flag1 = false;
+    bool flag2 = false;
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].variable, variable) == 0 && strcmp(stackData[i].scope, scope) == 0) {
+           data_type_actual = stackData[i].data_type;
+           flag1 = true;
+        }
+    }
+   
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].scope, function) == 0) {
+           data_type_virtual = stackData[i].data_type;
+           flag2 = true;
+        }
+    }
+    if(flag1 == false && flag2 == true){
+        printf("\n!!!!Stack Datatype Mismatch Error");
+        exit(0);
+    }
+    if(flag1 == true && flag2 == true){
+        if(strcmp(data_type_actual,data_type_virtual) != 0){
+            printf("\n!!!!Stack Datatype Mismatch Error");
+            exit(0);
+        }
+    }
+}
+
+void stack_typemismatch(const char* variable,const char* scope,const char* data_type){
+    char* data_type_actual = " ";
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].variable, variable) == 0 && strcmp(stackData[i].scope, scope) == 0) {
+           data_type_actual = stackData[i].data_type;
+        }
+    }
+   
+    if(strcmp(data_type_actual,data_type) != 0){
+        printf("\n!!!!Stack Datatype Mismatch Error");
+        exit(0);
+    }
+}
+
+
+void stack_pop_ele(const char* variable,const char* scope){
+    for (int i = 0; i < stack_count; i++) {
+        if (strcmp(stackData[i].variable, variable) == 0 && strcmp(stackData[i].scope, scope) == 0) {
+            if(stackData[i].size == 0){
+                printf("\n!!!!!Stack Underflow Error");
+                exit(0);
+            }else{
+                stackData[i].size--;
+            }
+        }
+    }
+}
+
+void add_stack(const char* variable,const char* data_type, const char* scope, bool isActual){
+    stackData[stack_count].variable = strdup(variable);
+    stackData[stack_count].data_type = strdup(data_type);
+    stackData[stack_count].scope = strdup(scope);
+    stackData[stack_count].isActual = isActual;
+    stackData[stack_count].size = 0;
+    stack_count++;
+}
+
+int isVariableDeclared(const char* var, const char* scope) {
     for (int i = 0; i < symbol_count; i++) {
         if (strcmp(symbol_table[i].variable, var) == 0 && strcmp(symbol_table[i].scope, scope) == 0) {
             return i;
@@ -116,6 +212,8 @@ void show_symbol_table() {
     }
     printf("-------------------------------------------------------------------------------------------------------------\n\n");
 }
+
+
 int curr_function_call_index;
 %}
 
@@ -128,7 +226,7 @@ int curr_function_call_index;
 
 %token PREPROCESSOR  HEADER_FILE SPECIAL_SYMBOL
 %token USING NAMESPACE STD
-%token INT VOID MAIN
+%token INT VOID MAIN CHARSTAR
 %token IF ELSE FOR ASSIGNMENT_OPERATOR INCREMENT_OPERATOR
 %token RETURN COUT ENDL OPERATOR
 %token STACK SIZE POP PUSH EMPTY TOP DOT
@@ -138,7 +236,7 @@ int curr_function_call_index;
 %token <str> STRING_LITERAL NUMBER
 
 %type <num> function_parameter_list argument_list  stack_size
-%type <str> variable_declaration_name function_name
+%type <str> variable_declaration_name function_name variable_value
 
 %%
 
@@ -185,10 +283,12 @@ function_signature:
     function_declaration_name LPAREN RPAREN
     {
         symbol_table[symbol_count - 1].param_count = 0;
+        printf("function signature.\n");
     }
     | function_declaration_name LPAREN function_parameter_list RPAREN
     {
         symbol_table[symbol_count - ($3+1)].param_count = $3;
+        printf("function signature.\n");
     }
 
 function_declaration_name:
@@ -197,12 +297,14 @@ function_declaration_name:
         current_function_name = strdup($2);
         add_symbol($2, VOID_TYPE, current_function_name, true); 
         symbol_table[symbol_count - 1].val_type = NONE;
+        printf("function_declaration_name.\n");
     }
     | INT IDENTIFIER
     {
        current_function_name = strdup($2);
         add_symbol($2, VOID_TYPE, current_function_name, true); 
         symbol_table[symbol_count - 1].val_type = NONE;
+        printf("function_declaration_name.\n");
     };
 
 variable_declaration_name:
@@ -235,6 +337,8 @@ function_parameter:
         symbol_table[symbol_count - 1].param_count = 1;
         symbol_table[symbol_count - 1].val_type = STATIC;
         symbol_table[symbol_count - 2].argument_type = STACK_INT_TYPE;
+
+        add_stack($5,"INT",current_function_name,false);
     }
     | INT IDENTIFIER
     {
@@ -270,6 +374,9 @@ function_call:
             printf("\nFunction Argument Type Mismatch error!!!!");
             exit(0);
         }
+
+        // stack_typemismatch($1,current_function_name,$3);
+
     }
     | function_name LPAREN RPAREN TERMINATOR_SYMBOL
     {
@@ -302,7 +409,7 @@ argument_list:
 argument:
     IDENTIFIER
     {
-        int argumentIndex = isDeclared($1, current_function_name);
+        int argumentIndex = isVariableDeclared($1, current_function_name);
         if (argumentIndex==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
@@ -343,6 +450,12 @@ variable_value:
             printf("\nInteger Range Exceeded!!!!!\n\n");
         }
         symbol_table[symbol_count - 1].val_type = STATIC;
+        $$ = "INT";
+    }
+    | STRING_LITERAL
+    {
+        symbol_table[symbol_count - 1].val_type = STATIC;
+        $$ = "STRING";
     }
     | stack_size
     {
@@ -365,7 +478,7 @@ initialization_block:
     }
     | IDENTIFIER ASSIGNMENT_OPERATOR NUMBER
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
@@ -375,22 +488,22 @@ initialization_block:
 condition_block:
     IDENTIFIER SPECIAL_SYMBOL IDENTIFIER
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
-        if (isDeclared($3, current_function_name)==-1) {
+        if (isVariableDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($3));
             exit(0);
         }
     }
     | IDENTIFIER ASSIGNMENT_OPERATOR IDENTIFIER
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
-         if (isDeclared($3, current_function_name)==-1) {
+         if (isVariableDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($3));
             exit(0);
         }
@@ -400,7 +513,7 @@ condition_block:
 action_block:
     IDENTIFIER INCREMENT_OPERATOR INCREMENT_OPERATOR
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n", strdup($1));
             exit(0);
         }
@@ -417,52 +530,59 @@ stack_declaration:
         add_symbol($5, STACK_INT_TYPE, current_function_name, false);
         symbol_table[symbol_count - 1].param_count = 1;
         symbol_table[symbol_count - 1].val_type = STATIC;
+
+        add_stack($5,"INT",current_function_name,true);
     };
+    | STACK SPECIAL_SYMBOL CHARSTAR SPECIAL_SYMBOL IDENTIFIER TERMINATOR_SYMBOL
+    {
+        add_symbol($5, STACK_INT_TYPE, current_function_name, false);
+        symbol_table[symbol_count - 1].param_count = 1;
+        symbol_table[symbol_count - 1].val_type = STATIC;
+
+        add_stack($5,"STRING",current_function_name,true);
+    }
 
 stack_push:
     IDENTIFIER DOT PUSH LPAREN variable_value RPAREN TERMINATOR_SYMBOL
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
-        stack_size_count++;
+        stack_push_ele($1,$5,current_function_name);
+        stack_typemismatch($1,current_function_name,$5);
         printf("Processed stack push statement.\n");
     };
     
 stack_size:
     IDENTIFIER DOT SIZE LPAREN RPAREN
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
-        $$ = stack_size_count;
         printf("Processed stack size statement.\n");
     };
     
 stack_pop:
     IDENTIFIER DOT POP LPAREN RPAREN TERMINATOR_SYMBOL
     {
-        if (isDeclared($1, current_function_name)==-1) {
+        if (isVariableDeclared($1, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($1));
             exit(0);
         }
-        if(stack_size_count<0){
-            printf("\nStack %s - Stack Underflow Error!!!!\n\n", strdup($1));
-            exit(0);
-        }
-        stack_size_count--;
+        stack_pop_ele($1,current_function_name);
         printf("Processed stack pop statement.\n");
     };
 
 stack_top:
     COUT OPERATOR IDENTIFIER DOT TOP LPAREN RPAREN OPERATOR ENDL TERMINATOR_SYMBOL
     {
-        if (isDeclared($3, current_function_name)==-1) {
+        if (isVariableDeclared($3, current_function_name)==-1) {
             printf("\nVariable %s is not declared!!!!\n\n", strdup($3));
             exit(0);
         }
+        stack_top_ele($3,current_function_name);
         printf("Processed stack top statement.\n");
     };
     
@@ -522,5 +642,5 @@ int main(void) {
 
 int yyerror(const char *s) {
     printf("Error: %s\n\n", s);
-    return 0; // No need to exit; you might want to continue parsing.
+    return 0;
 }
